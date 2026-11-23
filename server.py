@@ -20,11 +20,11 @@ def get_conn():
 
 
 @contextmanager
-def db_cursor():
+def database():
     conn = get_conn()
     try:
-        cursor = conn.cursor()
-        yield cursor
+        db = conn.cursor()
+        yield db
         conn.commit()
     except Exception:
         conn.rollback()
@@ -34,8 +34,8 @@ def db_cursor():
 
 
 def init_db():
-    with db_cursor() as cursor:
-        cursor.execute(
+    with database() as db:
+        db.execute(
             """
             CREATE TABLE IF NOT EXISTS character (
                 characterid SERIAL PRIMARY KEY,
@@ -113,15 +113,15 @@ def root():
 
 @app.get("/characters")
 def list_characters():
-    with db_cursor() as cursor:
-        cursor.execute(
+    with database() as db:
+        db.execute(
             """
             SELECT characterid, firstname, lastname, home_server, max_inventory
             FROM character
             ORDER BY characterid
             """
         )
-        rows = [dict(row) for row in cursor.fetchall()]
+        rows = [dict(row) for row in db.fetchall()]
     return jsonify(rows), 200
 
 
@@ -130,8 +130,8 @@ def get_character():
     characterid = parse_int(request.values.get("characterid"))
     if characterid is None:
         return invalid()
-    with db_cursor() as cursor:
-        cursor.execute(
+    with database() as db:
+        db.execute(
             """
             SELECT characterid, firstname, lastname, home_server, max_inventory
             FROM character
@@ -139,7 +139,7 @@ def get_character():
             """,
             (characterid,),
         )
-        row = cursor.fetchone()
+        row = db.fetchone()
     if row is None:
         return not_found()
     return jsonify(dict(row)), 200
@@ -160,8 +160,8 @@ def create_character():
         or max_inventory > 2147483647
     ):
         return invalid()
-    with db_cursor() as cursor:
-        cursor.execute(
+    with database() as db:
+        db.execute(
             """
             INSERT INTO character (firstname, lastname, home_server, max_inventory)
             VALUES (%s, %s, %s, %s)
@@ -169,7 +169,7 @@ def create_character():
             """,
             (firstname, lastname, home_server, max_inventory),
         )
-        characterid = cursor.fetchone()["characterid"]
+        characterid = db.fetchone()["characterid"]
     return jsonify({"characterid": characterid}), 201
 
 
@@ -178,12 +178,12 @@ def delete_character():
     characterid = parse_int(request.values.get("characterid"))
     if characterid is None:
         return invalid()
-    with db_cursor() as cursor:
-        cursor.execute(
+    with database() as db:
+        db.execute(
             "DELETE FROM character WHERE characterid = %s",
             (characterid,),
         )
-        deleted = cursor.rowcount
+        deleted = db.rowcount
     if deleted == 0:
         return not_found()
     return jsonify({"success": True}), 200
@@ -191,15 +191,15 @@ def delete_character():
 
 @app.get("/items")
 def list_items():
-    with db_cursor() as cursor:
-        cursor.execute(
+    with database() as db:
+        db.execute(
             """
             SELECT itemid, name, type, rarity
             FROM item
             ORDER BY itemid
             """
         )
-        rows = [dict(row) for row in cursor.fetchall()]
+        rows = [dict(row) for row in db.fetchall()]
     return jsonify(rows), 200
 
 
@@ -208,8 +208,8 @@ def get_item():
     itemid = parse_int(request.values.get("itemid"))
     if itemid is None:
         return invalid()
-    with db_cursor() as cursor:
-        cursor.execute(
+    with database() as db:
+        db.execute(
             """
             SELECT itemid, name, type, rarity
             FROM item
@@ -217,7 +217,7 @@ def get_item():
             """,
             (itemid,),
         )
-        row = cursor.fetchone()
+        row = db.fetchone()
     if row is None:
         return not_found()
     return jsonify(dict(row)), 200
@@ -230,8 +230,8 @@ def create_item():
     rarity = required_text("rarity")
     if name is None or item_type is None or rarity is None:
         return invalid()
-    with db_cursor() as cursor:
-        cursor.execute(
+    with database() as db:
+        db.execute(
             """
             INSERT INTO item (name, type, rarity)
             VALUES (%s, %s, %s)
@@ -239,7 +239,7 @@ def create_item():
             """,
             (name, item_type, rarity),
         )
-        itemid = cursor.fetchone()["itemid"]
+        itemid = db.fetchone()["itemid"]
     return jsonify({"itemid": itemid}), 201
 
 
@@ -248,20 +248,20 @@ def delete_item():
     itemid = parse_int(request.values.get("itemid"))
     if itemid is None:
         return invalid()
-    with db_cursor() as cursor:
-        cursor.execute("DELETE FROM item WHERE itemid = %s", (itemid,))
-        deleted = cursor.rowcount
+    with database() as db:
+        db.execute("DELETE FROM item WHERE itemid = %s", (itemid,))
+        deleted = db.rowcount
     if deleted == 0:
         return not_found()
     return jsonify({"success": True}), 200
 
 
-def character_exists(cursor, characterid):
-    cursor.execute(
+def character_exists(db, characterid):
+    db.execute(
         "SELECT 1 FROM character WHERE characterid = %s",
         (characterid,),
     )
-    return cursor.fetchone() is not None
+    return db.fetchone() is not None
 
 
 @app.get("/inventory")
@@ -269,10 +269,10 @@ def get_inventory():
     characterid = parse_int(request.values.get("characterid"))
     if characterid is None:
         return invalid()
-    with db_cursor() as cursor:
-        if not character_exists(cursor, characterid):
+    with database() as db:
+        if not character_exists(db, characterid):
             return not_found()
-        cursor.execute(
+        db.execute(
             """
             SELECT characterid, itemid, time_acquired
             FROM ininventory
@@ -282,7 +282,7 @@ def get_inventory():
             (characterid,),
         )
         rows = []
-        for row in cursor.fetchall():
+        for row in db.fetchall():
             entry = dict(row)
             entry["time_acquired"] = format_time(entry["time_acquired"])
             rows.append(entry)
@@ -294,10 +294,10 @@ def get_history():
     characterid = parse_int(request.values.get("characterid"))
     if characterid is None:
         return invalid()
-    with db_cursor() as cursor:
-        if not character_exists(cursor, characterid):
+    with database() as db:
+        if not character_exists(db, characterid):
             return not_found()
-        cursor.execute(
+        db.execute(
             """
             SELECT characterid, itemid, time_acquired, time_dropped
             FROM history
@@ -307,7 +307,7 @@ def get_history():
             (characterid,),
         )
         rows = []
-        for row in cursor.fetchall():
+        for row in db.fetchall():
             entry = dict(row)
             entry["time_acquired"] = format_time(entry["time_acquired"])
             entry["time_dropped"] = format_time(entry["time_dropped"])
@@ -322,8 +322,8 @@ def item_acquired():
     if characterid is None or itemid is None:
         return invalid()
     acquired_at = datetime.now().replace(microsecond=0)
-    with db_cursor() as cursor:
-        cursor.execute(
+    with database() as db:
+        db.execute(
             """
             SELECT max_inventory
             FROM character
@@ -331,13 +331,13 @@ def item_acquired():
             """,
             (characterid,),
         )
-        character = cursor.fetchone()
+        character = db.fetchone()
         if character is None:
             return invalid()
-        cursor.execute("SELECT 1 FROM item WHERE itemid = %s", (itemid,))
-        if cursor.fetchone() is None:
+        db.execute("SELECT 1 FROM item WHERE itemid = %s", (itemid,))
+        if db.fetchone() is None:
             return invalid()
-        cursor.execute(
+        db.execute(
             """
             SELECT 1
             FROM ininventory
@@ -345,15 +345,15 @@ def item_acquired():
             """,
             (characterid, itemid),
         )
-        if cursor.fetchone() is not None:
+        if db.fetchone() is not None:
             return invalid()
-        cursor.execute(
+        db.execute(
             "SELECT COUNT(*) AS count FROM ininventory WHERE characterid = %s",
             (characterid,),
         )
-        if cursor.fetchone()["count"] >= character["max_inventory"]:
+        if db.fetchone()["count"] >= character["max_inventory"]:
             return invalid()
-        cursor.execute(
+        db.execute(
             """
             INSERT INTO ininventory (characterid, itemid, time_acquired)
             VALUES (%s, %s, %s)
@@ -370,8 +370,8 @@ def item_dropped():
     if characterid is None or itemid is None:
         return invalid()
     dropped_at = datetime.now().replace(microsecond=0)
-    with db_cursor() as cursor:
-        cursor.execute(
+    with database() as db:
+        db.execute(
             """
             SELECT time_acquired
             FROM ininventory
@@ -379,17 +379,17 @@ def item_dropped():
             """,
             (characterid, itemid),
         )
-        held = cursor.fetchone()
+        held = db.fetchone()
         if held is None:
             return invalid()
-        cursor.execute(
+        db.execute(
             """
             DELETE FROM ininventory
             WHERE characterid = %s AND itemid = %s
             """,
             (characterid, itemid),
         )
-        cursor.execute(
+        db.execute(
             """
             INSERT INTO history (
                 characterid, itemid, time_acquired, time_dropped
